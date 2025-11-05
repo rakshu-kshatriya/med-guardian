@@ -36,9 +36,10 @@ function App() {
           <CityMap />
         </div>
       </main>
+      
 
       <footer className="relative mt-16 py-8 bg-gradient-to-r from-gray-900 via-gray-800 to-gray-900 text-white">
-        <div className="absolute inset-0 bg-[url('data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%239C92AC" fill-opacity="0.1"%3E%3Cpath d="M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E')] opacity-20"></div>
+        <div className="absolute inset-0 pointer-events-none opacity-20 bg-[radial-gradient(circle_at_25%_25%,rgba(255,255,255,0.08),transparent_35%),radial-gradient(circle_at_75%_75%,rgba(255,255,255,0.08),transparent_35%)]"></div>
         <div className="relative container mx-auto px-4 text-center">
           <div className="flex items-center justify-center gap-2 mb-2">
             <svg className="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
