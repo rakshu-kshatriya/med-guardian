@@ -1,8 +1,8 @@
 fastapi==0.115.12
-uvicorn[standard]==0.22.0
+uvicorn==0.22.0
 httpx==0.28.1
 pandas==2.2.3
-numpy==2.2.3
+numpy==1.26.4
 scikit-learn==1.3.2
 pymongo==4.15.1
 redis==5.2.0
@@ -11,6 +11,3 @@ python-dotenv==1.1.0
 python-multipart==0.0.20
 pydantic==2.11.4
 orjson==3.10.18
-
-# Optional (Prophet will be attempted at runtime if available, but is omitted from prod to avoid heavy builds)
-# prophet==1.2.1
