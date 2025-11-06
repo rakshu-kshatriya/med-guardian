@@ -12,6 +12,7 @@ module.exports = {
       },
       colors: {
         white: {
+          DEFAULT: '#ffffff',
           10: 'rgba(255,255,255,0.10)',
           20: 'rgba(255,255,255,0.20)'
         }
