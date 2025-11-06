@@ -1,38 +1,28 @@
-name: "🚀 Med-Guardian CI/CD — Build, Test & Deploy to Railway"
+name: 🚀 Med-Guardian CI/CD — Build, Test & Deploy to Railway
 
 on:
   push:
-    branches: [main, master]  # ✅ handles both 'main' and 'master' branches
+    branches: [main]
 
 jobs:
-  build-test-deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # -----------------------------
-      # 1️⃣ Checkout the repository
-      # -----------------------------
       - name: 🧩 Checkout repository
         uses: actions/checkout@v4
 
-      # -----------------------------
-      # 2️⃣ Set up Python backend environment
-      # -----------------------------
       - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 📦 Install backend dependencies
-        working-directory: backend
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          python -m compileall .
+          pip install -r backend/requirements.txt
+          python -m compileall backend
 
-      # -----------------------------
-      # 3️⃣ Set up Node.js frontend environment
-      # -----------------------------
       - name: ⚛️ Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -44,25 +34,14 @@ jobs:
           npm ci
           npm run build
 
-      # -----------------------------
-      # 4️⃣ Validate Docker build
-      # -----------------------------
       - name: 🐳 Validate Docker build
         run: docker build -t med-guardian .
 
-      # -----------------------------
-      # 5️⃣ Deploy to Railway
-      # -----------------------------
       - name: 🚢 Deploy to Railway
-        if: success()
-        uses: railwayapp/railway-action@v3
+        uses: railwayapp/railway-ci-action@v1.0.3
         with:
-          apiToken: ${{ secrets.RAILWAY_TOKEN }} # ✅ Secret you added in GitHub → Settings → Secrets → Actions
-          serviceId: ${{ secrets.RAILWAY_SERVICE_ID }} # ✅ Add this too (explained below)
-          # Optional: environmentId: ${{ secrets.RAILWAY_ENV_ID }}
+          railwayToken: ${{ secrets.RAILWAY_TOKEN }}
+          serviceId: ${{ secrets.RAILWAY_SERVICE_ID }}
 
-      # -----------------------------
-      # 6️⃣ Done
-      # -----------------------------
-      - name: ✅ Deployment summary
+      - name: ✅ Summary
         run: echo "✅ Med-Guardian successfully built and deployed to Railway!"
