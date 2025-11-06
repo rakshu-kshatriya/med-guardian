@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧩 Checkout repository
+      - name: 🧩 Checkout code
         uses: actions/checkout@v4
 
       - name: 🐍 Set up Python
@@ -19,7 +19,6 @@ jobs:
 
       - name: 📦 Install backend dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
           python -m compileall backend
 
@@ -38,10 +37,8 @@ jobs:
         run: docker build -t med-guardian .
 
       - name: 🚢 Deploy to Railway
-        uses: railwayapp/railway-ci-action@v1.0.3
+        if: success()
+        uses: railwayapp/cli-action@v1
         with:
           railwayToken: ${{ secrets.RAILWAY_TOKEN }}
-          serviceId: ${{ secrets.RAILWAY_SERVICE_ID }}
-
-      - name: ✅ Summary
-        run: echo "✅ Med-Guardian successfully built and deployed to Railway!"
+          serviceId: ${{ vars.RAILWAY_SERVICE_ID }}
