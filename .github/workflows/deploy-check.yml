@@ -1,17 +1,15 @@
-name: "🚀 Med-Guardian CI/CD — Build, Test & Deploy to Railway"
+name: 🚀 Med-Guardian CI/CD — Build, Test & Deploy to Railway
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    branches: [main]
 
 jobs:
-  build-test-deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧭 Checkout repository
+      - name: 🧩 Checkout code
         uses: actions/checkout@v4
 
       - name: 🐍 Set up Python
@@ -19,44 +17,28 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 📦 Set up Node.js
+      - name: 📦 Install backend dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          python -m compileall backend
+
+      - name: ⚛️ Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '18'
+          node-version: '20'
 
-      # --- Backend ---
-      - name: 🔧 Install backend dependencies
-        working-directory: ./backend
+      - name: 🧱 Build frontend
+        working-directory: frontend
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          npm ci
+          npm run build
 
-      - name: 🧪 Backend syntax check
-        working-directory: ./backend
-        run: python -m compileall .
+      - name: 🐳 Validate Docker build
+        run: docker build -t med-guardian .
 
-      # --- Frontend ---
-      - name: ⚙️ Install frontend dependencies
-        working-directory: ./frontend
-        run: npm ci
-
-      - name: 🏗️ Build frontend
-        working-directory: ./frontend
-        run: npm run build
-
-      # --- Docker ---
-      - name: 🐳 Docker build validation
-        run: docker build -t med-guardian-test .
-
-      # --- Deployment ---
       - name: 🚢 Deploy to Railway
         if: success()
-        uses: railwayapp/railway-action@v2
+        uses: railwayapp/actions@v1
         with:
-          railwayToken: ${{ secrets.RAILWAY_TOKEN }}
+          railwayToken: ${{ secrets.RAILWAY_TOKEN }} # 🔹 Replace this placeholder!
           serviceName: med-guardian
-          # optionally specify environment:
-          # environment: production
-
-      - name: ✅ Summary
-        run: echo "✅ Med-Guardian successfully built and deployed to Railway!"
