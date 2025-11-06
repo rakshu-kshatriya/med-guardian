@@ -7,8 +7,8 @@ Falls back to this when MongoDB is not available.
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from city_data import CITIES
-from database import save_trend_data
+from backend.city_data import CITIES
+from backend.database import save_trend_data
 
 def generate_synthetic_data(
     city: str,
@@ -80,7 +80,7 @@ def generate_synthetic_data(
     # Save to MongoDB if available (save latest data point)
     if len(dates) > 0:
         try:
-            from database import is_mongodb_available
+            from backend.database import is_mongodb_available
             if is_mongodb_available():
                 latest_idx = len(df) - 1
                 save_trend_data(

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+echo "[start-prod] root: $ROOT_DIR"
+
+echo "[start-prod] Installing frontend dependencies and building..."
+cd "$ROOT_DIR/frontend"
+if [ -f package-lock.json ]; then
+  npm ci
+else
+  npm install --no-audit --no-fund
+fi
+npm run build
+
+echo "[start-prod] Building done. Installing backend requirements..."
+cd "$ROOT_DIR/backend"
+if [ -f requirements.txt ]; then
+  python -m pip install --upgrade pip setuptools wheel
+  pip install -r requirements.txt
+fi
+
+echo "[start-prod] Starting uvicorn backend..."
+exec uvicorn backend.main:app --host 0.0.0.0 --port ${PORT:-8000}

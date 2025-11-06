@@ -234,9 +234,12 @@ export default function PredictionChart({ city, disease }) {
     );
   }
 
-  // Separate history and forecast
+  // Separate history and forecast. Ensure forecastData contains at most the next 30 days.
   const historyData = data.filter((d) => d.actual !== null);
-  const forecastData = data.filter((d) => d.predicted !== null);
+  let forecastData = data.filter((d) => d.predicted !== null);
+  if (forecastData.length > 30) {
+    forecastData = forecastData.slice(0, 30);
+  }
 
   return (
     <div className="card-gradient rounded-2xl p-6 card-hover animate-fade-in">
@@ -319,16 +322,25 @@ export default function PredictionChart({ city, disease }) {
       {/* Chart */}
       <div className="chart-container">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xl font-bold gradient-text">
-            📊 Disease Trend Analysis
-          </h3>
+          <div className="flex items-center gap-3">
+            <h3 className="text-xl font-bold gradient-text">
+              📊 Disease Trend Analysis
+            </h3>
+            {/* Badge indicating 30-day forecast with tooltip for accessibility */}
+            <span
+              role="status"
+              aria-label="30-day forecast badge. This chart shows a model forecast (Prophet with fallback) for the next 30 days."
+              title="30-day model forecast — produced by Prophet when available; fallback predictors used when needed"
+              className="text-xs font-semibold px-2 py-1 rounded-md bg-white/8 text-white/90 border border-white/10"
+            >30-day forecast</span>
+          </div>
           <div className="flex items-center gap-4 text-sm">
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
               <span className="text-gray-600 font-medium">Historical</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-orange-500 rounded-full"></div>
+              <div className="w-3 h-3 bg-orange-500 rounded-full" aria-hidden></div>
               <span className="text-gray-600 font-medium">Forecast</span>
             </div>
           </div>

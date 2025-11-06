@@ -25,10 +25,19 @@ def get_mongo_client() -> Optional[MongoClient]:
         return _mongo_client
     
     mongo_uri = os.environ.get("MONGO_URI")
-    
+
+    # If no MONGO_URI provided, attempt to connect to a local MongoDB instance as a convenience.
     if not mongo_uri:
-        logger.info("MONGO_URI not set, MongoDB disabled")
-        return None
+        default_local = "mongodb://localhost:27017"
+        try:
+            tmp_client = MongoClient(default_local, serverSelectionTimeoutMS=2000, connectTimeoutMS=2000)
+            tmp_client.admin.command('ping')
+            _mongo_client = tmp_client
+            logger.info("Connected to local MongoDB at mongodb://localhost:27017 (auto-detected)")
+            return _mongo_client
+        except Exception:
+            logger.info("MONGO_URI not set and no local MongoDB detected, MongoDB disabled")
+            return None
     
     try:
         _mongo_client = MongoClient(
@@ -96,6 +105,48 @@ def save_trend_data(city: str, disease: str, date: datetime, cases: int, avg_tem
         return True
     except Exception as e:
         logger.error(f"Error saving trend data: {e}")
+        return False
+
+
+def save_news_item(item: dict) -> bool:
+    """Save a normalized news item to MongoDB. Upserts on unique id/url.
+
+    Expected fields on item: id, title, source, timestamp (ISO), link (optional), sentiment
+    """
+    db = get_database()
+    if db is None:
+        return False
+
+    try:
+        collection = db["news"]
+        # Ensure indexes
+        try:
+            collection.create_index([("id", 1)], unique=True)
+            collection.create_index([("timestamp", -1)])
+            collection.create_index([("source", 1)])
+        except Exception:
+            pass
+
+        # Convert timestamp if present
+        ts = item.get("timestamp")
+        try:
+            if isinstance(ts, str):
+                # try ISO parse
+                from dateutil.parser import isoparse
+                ts_parsed = isoparse(ts)
+            else:
+                ts_parsed = ts
+        except Exception:
+            ts_parsed = datetime.utcnow()
+
+        doc = dict(item)
+        doc["timestamp"] = ts_parsed
+        doc["ingested_at"] = datetime.utcnow()
+
+        collection.update_one({"id": doc.get("id")}, {"$set": doc}, upsert=True)
+        return True
+    except Exception as e:
+        logger.error(f"Error saving news item: {e}")
         return False
 
 

@@ -16,11 +16,99 @@ import random
 import os
 
 from backend.city_data import CITIES, get_city_by_name
+# Load .env early so local env files are respected (optional)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
 from backend.predictor import run_forecast 
 from backend.advisory_service import get_advisory
 from backend.example_data import generate_synthetic_data, get_latest_trends
 from backend.database import is_mongodb_available, get_trend_history, save_trend_data
 from backend.redis_client import is_redis_available, cache_get, cache_set
+from backend.news_ingest import fetch_combined_news, METRIC_NEWS_SAVED
+from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+from backend.database import save_news_item
+
+# Background ingestion / caching configuration
+NEWS_INGEST_INTERVAL = int(os.environ.get("NEWS_INGEST_INTERVAL", "300"))  # seconds
+NEWS_CACHE_TTL = int(os.environ.get("NEWS_CACHE_TTL", "180"))  # seconds
+INGEST_CITIES = os.environ.get("INGEST_CITIES")  # comma-separated city names (optional)
+
+
+def _news_cache_key(city: str, disease: str, limit: int) -> str:
+    return f"news:{city.lower()}:{disease.lower()}:{limit}"
+
+
+async def _run_news_ingest_loop(stop_event: asyncio.Event):
+    """Background task: periodically fetch and cache news for configured cities/diseases."""
+    logger.info("Starting background news ingest loop")
+
+    # Determine cities to ingest: either from INGEST_CITIES env or top 5 from CITIES
+    if INGEST_CITIES:
+        cities_to_ingest = [c.strip() for c in INGEST_CITIES.split(",") if c.strip()]
+    else:
+        # Pick top 5 cities from available list
+        cities_to_ingest = [c["city_name"] for c in CITIES[:5]]
+
+    diseases_to_ingest = ["flu", "dengue", "covid"]
+
+    while not stop_event.is_set():
+        for city in cities_to_ingest:
+            for disease in diseases_to_ingest:
+                try:
+                    # Try to fetch from external providers; if they are not configured,
+                    # fetch_combined_news will raise and we'll skip to synthetic fallback.
+                    items = []
+                    try:
+                        items = await fetch_combined_news(city, disease, limit=10)
+                        source = "external"
+                    except Exception as e:
+                        # Do not spam logs; log at debug level for expected fallback.
+                        logger.debug(f"Background ingest: external providers unavailable: {e}. Generating synthetic items.")
+                        # Fallback to synthetic generator
+                        from backend.example_data import get_latest_trends
+                        # Convert trends history into simple news-like items
+                        trends = get_latest_trends(city, disease, days=7)
+                        items = []
+                        for idx, h in enumerate(trends.get("history", [])[:10]):
+                            items.append({
+                                "id": f"synthetic-{city}-{disease}-{idx}",
+                                "title": f"{disease} cases in {city}: {h.get('y')}",
+                                "source": "synthetic",
+                                "sentiment": "neutral",
+                                "timestamp": h.get("ds") + "T00:00:00Z",
+                                "link": None,
+                            })
+                        source = "synthetic"
+
+                    # Cache results in Redis if available
+                    cache_key = _news_cache_key(city, disease, 10)
+                    if is_redis_available():
+                        cache_set(cache_key, {"items": items, "source": source}, ttl=NEWS_CACHE_TTL)
+                        logger.debug(f"Cached news for {city}/{disease} -> {cache_key}")
+                    # Persist to MongoDB for historical analytics if available
+                    if is_mongodb_available():
+                        try:
+                            for it in items:
+                                saved = save_news_item(it)
+                                if saved:
+                                    try:
+                                        METRIC_NEWS_SAVED.inc()
+                                    except Exception:
+                                        pass
+                        except Exception as e:
+                            logger.warning(f"Failed to save news items to MongoDB: {e}")
+                except Exception as e:
+                    logger.warning(f"Error in background ingest for {city}/{disease}: {e}")
+
+        # Wait for configured interval or until stop
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=NEWS_INGEST_INTERVAL)
+        except asyncio.TimeoutError:
+            continue
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -121,7 +209,7 @@ async def get_trends_latest(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/predict")
+@app.get("/api/predictor")
 async def get_predict(
     city: str = Query(..., description="City name"),
     disease: str = Query("Unknown", description="Disease name")
@@ -161,7 +249,7 @@ async def get_predict(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@app.get("/api/advisory")
+@app.get("/api/advisory_service")
 async def get_advisory_endpoint(
     city: str = Query(..., description="City name"),
     disease: str = Query(..., description="Disease name"),
@@ -178,7 +266,7 @@ async def get_advisory_endpoint(
         return advisory
 
     except Exception as e:
-        logger.error(f"Error in /api/advisory: {e}")
+        logger.error(f"Error in /api/advisory_servive: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -245,6 +333,171 @@ async def get_directions(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/news_trends")
+async def get_news_trends(
+    city: str = Query(..., description="City name"),
+    disease: str = Query("Unknown", description="Disease name"),
+    limit: int = Query(10, description="Max number of news items")
+):
+    """Return synthetic news and social media trend items related to a disease and city."""
+    try:
+        city_data = get_city_by_name(city)
+        if not city_data:
+            raise HTTPException(status_code=404, detail=f"City '{city}' not found")
+        # Check Redis cache first
+        cache_key = _news_cache_key(city, disease, min(limit, 50))
+        cached = None
+        if is_redis_available():
+            try:
+                cached = cache_get(cache_key)
+            except Exception:
+                cached = None
+
+        if cached:
+            logger.debug(f"Cache hit for {cache_key}")
+            # cached expected shape: {"items": [...], "source": "external"|"synthetic"}
+            return {"city": city, "disease": disease, "items": cached.get("items", []), "source": cached.get("source", "cache")}
+
+        # Try to fetch from configured external providers (NewsAPI / Twitter). If not configured
+        # or an error occurs, fall back to synthetic generated items.
+        try:
+            items = await fetch_combined_news(city, disease, limit=min(limit, 50))
+            result = {"city": city, "disease": disease, "items": items, "source": "external"}
+            # Cache if Redis available
+            if is_redis_available():
+                cache_set(cache_key, {"items": items, "source": "external"}, ttl=NEWS_CACHE_TTL)
+            return result
+        except Exception as e:
+            logger.info(f"External news providers unavailable or failed: {e}. Falling back to synthetic data.")
+
+        base_trends = [
+            f"Spike in {disease} cases reported in {city}",
+            f"Hospitals in {city} see rise in {disease} admissions",
+            f"Public health advisory issued for {disease} in {city}",
+            f"Local schools in {city} close due to {disease} outbreak",
+            f"Social media warnings about {disease} spread in {city}"
+        ]
+
+        sources = ["NewsDaily", "HealthWatch", "LocalTimes", "Tweet", "FBPost"]
+
+        items = []
+        import random
+        from datetime import datetime, timedelta
+
+        for i in range(min(limit, 50)):
+            minutes_ago = random.randint(1, 120)
+            ts = (datetime.utcnow() - timedelta(minutes=minutes_ago)).isoformat() + "Z"
+            title = random.choice(base_trends)
+            source = random.choice(sources)
+            sentiment = random.choice(["neutral", "concern", "alarm", "advisory"])
+            items.append({
+                "id": f"news-{i}-{minutes_ago}",
+                "title": title,
+                "source": source,
+                "sentiment": sentiment,
+                "timestamp": ts,
+                "link": None,
+            })
+
+        return {"city": city, "disease": disease, "items": items, "source": "synthetic"}
+
+    except Exception as e:
+        logger.error(f"Error in /api/news_trends: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+    @app.get("/api/data_sources")
+    async def get_data_sources(
+        city: str = Query(..., description="City name"),
+        disease: str = Query("Unknown", description="Disease name"),
+        rows: int = Query(1000, description="Number of rows to return")
+    ):
+        """Return a CSV-like payload (JSON rows) containing recent synthetic or stored trend rows.
+        This endpoint is intended for the frontend Data Sources page to download a 1000 row dataset.
+        """
+        try:
+            # Validate city
+            city_data = get_city_by_name(city)
+            if not city_data:
+                raise HTTPException(status_code=404, detail=f"City '{city}' not found")
+
+            # If MongoDB has historical records, try to pull from it
+            if is_mongodb_available():
+                try:
+                    history = get_trend_history(city, disease, days=rows)
+                    # Convert to rows: date, cases, avg_temp, real_time_aqi
+                    rows_out = []
+                    for h in history:
+                        rows_out.append([h.get('ds'), h.get('y'), h.get('avg_temp', None), h.get('real_time_aqi', None)])
+                    return {"rows": rows_out, "source": "mongodb"}
+                except Exception:
+                    # Fallback to synthetic generator
+                    pass
+
+            # Fallback to synthetic data generator
+            from backend.example_data import generate_synthetic_data
+            df = generate_synthetic_data(city, disease, days=rows)
+            rows_out = []
+            for _, row in df.iterrows():
+                rows_out.append([row['ds'].strftime('%Y-%m-%d'), int(row['y']), float(row['avg_temp']), float(row['real_time_aqi'])])
+
+            return {"rows": rows_out, "source": "synthetic"}
+        except Exception as e:
+            logger.error(f"Error in /api/data_sources: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/stream_news")
+async def stream_news(
+    city: str = Query(..., description="City name"),
+    disease: str = Query("Unknown", description="Disease name")
+):
+    """SSE endpoint that streams synthetic social/news trend items periodically."""
+    async def news_generator():
+        # If external providers are configured, periodically fetch recent items and stream them.
+        try:
+            while True:
+                try:
+                    items = await fetch_combined_news(city, disease, limit=5)
+                    for it in items:
+                        yield f"event: news\ndata: {json.dumps(it)}\n\n"
+                    await asyncio.sleep(12)
+                    continue
+                except Exception as e:
+                    logger.info(f"Streaming external news failed: {e}. Switching to synthetic stream.")
+                    # Fall through to synthetic generator below
+
+                import random
+                from datetime import datetime
+                sources = ["NewsDaily", "HealthWatch", "LocalTimes", "Tweet", "FBPost"]
+                templates = [
+                    f"New reports of {{disease}} in {{city}} — hospitals monitoring situation.",
+                    f"Residents in {{city}} share concerns about rising {{disease}} cases on social media.",
+                    f"Public health officials in {{city}} advise precautions for {{disease}}.",
+                    f"Local clinic in {{city}} reports clusters of {{disease}} cases."
+                ]
+
+                while True:
+                    now = datetime.utcnow()
+                    title = random.choice(templates).format(disease=disease, city=city)
+                    item = {
+                        "id": f"news-{int(now.timestamp())}-{random.randint(1,1000)}",
+                        "title": title,
+                        "source": random.choice(sources),
+                        "sentiment": random.choice(["neutral", "concern", "alarm", "advisory"]),
+                        "timestamp": now.isoformat() + "Z",
+                    }
+
+                    yield f"event: news\ndata: {json.dumps(item)}\n\n"
+                    await asyncio.sleep(12)
+
+        except Exception as e:
+            logger.error(f"Error in SSE news stream: {e}")
+            yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+    return StreamingResponse(news_generator(), media_type="text/event-stream")
+
+
 @app.get("/api/stream")
 async def stream_updates(
     city: str = Query(..., description="City name"),
@@ -284,10 +537,21 @@ async def stream_updates(
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
-@app.get("/api/cities")
+@app.get("/api/city_data")
 async def get_cities():
     """Get list of all available cities."""
     return {"cities": CITIES}
+
+
+@app.get('/metrics')
+async def metrics():
+    """Prometheus metrics endpoint."""
+    try:
+        data = generate_latest()
+        return StreamingResponse(iter([data]), media_type=CONTENT_TYPE_LATEST)
+    except Exception as e:
+        logger.error(f"Error generating metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/health")
@@ -328,6 +592,41 @@ async def serve_frontend(path: str):
             return FileResponse(index_path)
 
     raise HTTPException(status_code=404, detail="Frontend not available")
+
+
+# Background ingest task management
+@app.on_event("startup")
+async def startup_event():
+    # Start background news ingest loop only if we have something to do:
+    # - Redis or Mongo available for caching/persistence, or
+    # - External providers configured (NEWSAPI_KEY/TWITTER_BEARER_TOKEN)
+    try:
+        providers_configured = bool(os.environ.get("NEWSAPI_KEY") or os.environ.get("TWITTER_BEARER_TOKEN"))
+        if not (is_redis_available() or is_mongodb_available() or providers_configured):
+            logger.info("Skipping background news ingest: no Redis/Mongo/providers configured")
+            return
+
+        # Avoid creating multiple tasks if hot-reload triggers startup twice
+        if getattr(app.state, "_news_ingest_task", None):
+            logger.debug("Background news ingest task already running; skipping creation")
+            return
+
+        app.state._news_ingest_stop = asyncio.Event()
+        app.state._news_ingest_task = asyncio.create_task(_run_news_ingest_loop(app.state._news_ingest_stop))
+        logger.info("Background news ingest task started")
+    except Exception as e:
+        logger.warning(f"Failed to start background ingest task: {e}")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    try:
+        if hasattr(app.state, "_news_ingest_stop") and app.state._news_ingest_stop:
+            app.state._news_ingest_stop.set()
+        if hasattr(app.state, "_news_ingest_task") and app.state._news_ingest_task:
+            await app.state._news_ingest_task
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

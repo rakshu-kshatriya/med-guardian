@@ -20,17 +20,27 @@ FROM python:3.11-slim AS backend
 
 WORKDIR /app
 
-# Install system dependencies (needed for Prophet)
+# Install build tools and common libs required by numeric packages
 RUN apt-get update && apt-get install -y \
+    build-essential \
     gcc \
     g++ \
     make \
     curl \
+    libssl-dev \
+    libgomp1 \
+    libblas-dev \
+    liblapack-dev \
+    libatlas-base-dev \
+    libgfortran5 \
+    libopenblas-dev \
+    libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy and install Python dependencies
-COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy and install production Python dependencies (smaller, avoids dev-only packages)
+COPY backend/requirements-prod.txt ./requirements-prod.txt
+RUN python -m pip install --upgrade pip setuptools wheel && \
+    pip install --no-cache-dir -r requirements-prod.txt
 
 # Copy backend code to /app/backend
 COPY backend/ ./backend/

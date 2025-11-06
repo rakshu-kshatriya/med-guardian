@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { GoogleMap, LoadScript, Polyline, Marker } from '@react-google-maps/api';
+import { MapContainer, TileLayer, Polyline as LPolyline, Marker as LMarker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
 import { getDirections, getCities } from '../api';
 import clsx from 'clsx';
 
@@ -348,16 +351,22 @@ export default function CityMap() {
             </GoogleMap>
           </LoadScript>
         ) : (
-          <div className="h-96 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center rounded-xl">
-            <div className="text-center p-8 bg-white/80 backdrop-blur-sm rounded-xl shadow-lg border border-gray-200">
-              <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
-                </svg>
-              </div>
-              <p className="text-gray-700 font-semibold mb-2">Google Maps API Key Not Configured</p>
-              <p className="text-sm text-gray-500">Set VITE_GOOGLE_MAPS_API_KEY in environment variables</p>
-            </div>
+          // Leaflet fallback map (works without Google Maps key)
+          <div className="h-96 rounded-xl overflow-hidden">
+            <MapContainer center={[defaultCenter.lat, defaultCenter.lng]} zoom={5} style={{ height: 384, width: '100%' }}>
+              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
+              {route && route.path && route.path.length > 0 && (
+                <>
+                  <LPolyline positions={route.path.map(p => [p.lat, p.lng])} pathOptions={{ color: '#3b82f6', weight: 4 }} />
+                  <LMarker position={[route.path[0].lat, route.path[0].lng]}>
+                    <Popup>Start</Popup>
+                  </LMarker>
+                  <LMarker position={[route.path[route.path.length - 1].lat, route.path[route.path.length - 1].lng]}>
+                    <Popup>End</Popup>
+                  </LMarker>
+                </>
+              )}
+            </MapContainer>
           </div>
         )}
       </div>

@@ -24,10 +24,19 @@ def get_redis_client() -> Optional[redis.Redis]:
         return _redis_client
     
     redis_url = os.environ.get("REDIS_URL")
-    
+
+    # If no REDIS_URL provided, attempt a local Redis on default port as a convenience.
     if not redis_url:
-        logger.info("REDIS_URL not set, Redis disabled")
-        return None
+        default_local = "redis://localhost:6379/0"
+        try:
+            client = redis.from_url(default_local, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
+            client.ping()
+            _redis_client = client
+            logger.info("Connected to local Redis at redis://localhost:6379/0 (auto-detected)")
+            return _redis_client
+        except Exception:
+            logger.info("REDIS_URL not set and no local Redis detected, Redis disabled")
+            return None
     
     try:
         _redis_client = redis.from_url(

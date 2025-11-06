@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
 import QuickOverview from './QuickOverview';
 import SettingsModal from './SettingsModal';
 
@@ -22,16 +21,12 @@ export default function Header() {
             </div>
           </div>
 
-          <nav className="flex-1 px-6 hidden lg:flex items-center gap-6">
-            <NavLink to="/" className={({isActive})=> isActive ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}>Home</NavLink>
-            <NavLink to="/prediction" className={({isActive})=> isActive ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}>Prediction</NavLink>
-            <NavLink to="/trends" className={({isActive})=> isActive ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}>Trends</NavLink>
-            <NavLink to="/data-sources" className={({isActive})=> isActive ? 'text-white font-semibold' : 'text-gray-300 hover:text-white'}>Data Sources</NavLink>
-            <div className="flex-1" />
-            <div className="relative max-w-lg">
-              <input aria-label="Search" placeholder="Search diseases or regions..." className="w-full bg-transparent text-white placeholder-slate-400 rounded-md px-4 py-2 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          <div className="flex-1 px-6 hidden lg:block">
+            <div className="relative">
+              <input placeholder="Search diseases or regions..." className="w-full bg-transparent text-white placeholder-slate-400 rounded-md px-4 py-2 border border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">⌘K</div>
             </div>
-          </nav>
+          </div>
 
           <div className="flex items-center gap-4">
             <div className="hidden md:flex items-center gap-3 mr-2">

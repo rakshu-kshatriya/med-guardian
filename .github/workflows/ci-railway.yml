@@ -1,0 +1,78 @@
+name: CI — Build & (optional) Deploy to Railway
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Build frontend, backend and docker image
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 18
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Cache node modules
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: ${{ runner.OS }}-node-${{ hashFiles('frontend/package-lock.json', 'frontend/package.json') }}
+          restore-keys: |
+            ${{ runner.OS }}-node-
+
+      - name: Install and build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install backend requirements
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+
+      - name: Build docker image (local, no push)
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          tags: med-guardian:latest
+
+  deploy:
+    name: Optional: Deploy to Railway (requires secrets)
+    needs: build
+    runs-on: ubuntu-latest
+    if: ${{ secrets.RAILWAY_API_KEY && secrets.RAILWAY_PROJECT_ID }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: |
+          npm install -g @railway/cli
+
+      - name: Login to Railway
+        env:
+          RAILWAY_API_KEY: ${{ secrets.RAILWAY_API_KEY }}
+        run: |
+          railway login --apiKey $RAILWAY_API_KEY
+
+      - name: Trigger Railway deploy
+        env:
+          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
+        run: |
+          # The CLI command below will trigger a deployment for the given project.
+          # If your Railway setup uses GitHub integration, pushing to main already triggers deploy.
+          railway up --yes --project $RAILWAY_PROJECT_ID || true
