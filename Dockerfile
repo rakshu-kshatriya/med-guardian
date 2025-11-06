@@ -24,17 +24,17 @@ ARG CACHEBUST=1
 WORKDIR /app
 
 # Install build tools and common libs required by numeric packages
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     g++ \
     make \
     curl \
+    ca-certificates \
     libssl-dev \
     libgomp1 \
     libblas-dev \
     liblapack-dev \
-    libatlas-base-dev \
     libgfortran5 \
     libopenblas-dev \
     libpq-dev \
