@@ -36,9 +36,10 @@ jobs:
       - name: 🐳 Validate Docker build
         run: docker build -t med-guardian .
 
-      - name: 🚢 Deploy to Railway
-        if: success()
-        uses: railwayapp/cli-action@v1
-        with:
-          railwayToken: ${{ secrets.RAILWAY_TOKEN }}
-          serviceId: ${{ vars.RAILWAY_SERVICE_ID }}
+      - name: 🚢 Deploy to Railway via CLI
+        run: |
+          npm install -g @railway/cli
+          railway link --service ${{ vars.RAILWAY_SERVICE_ID }}
+          railway up --ci
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
