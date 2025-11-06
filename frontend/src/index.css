@@ -53,6 +53,12 @@ html.dark .text-gray-700 { color: var(--text) !important; }
     transition: transform 350ms cubic-bezier(.2,.9,.3,1), box-shadow 350ms;
   }
 
+  /* Utility wrapper so Tailwind JIT / @apply of text-white can be referenced
+     from CSS without causing purge or apply issues in some build setups. */
+  .text-white-custom {
+    @apply text-white;
+  }
+
   .card-hover {
     @apply transition-all duration-300;
     will-change: transform;
