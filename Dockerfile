@@ -18,6 +18,9 @@ RUN npm run build
 # Stage 2 — Backend with FastAPI + Uvicorn
 FROM python:3.11-slim AS backend
 
+# A small cache-bust ARG so CI / Railway will perform a fresh build when we change the source
+ARG CACHEBUST=1
+
 WORKDIR /app
 
 # Install build tools and common libs required by numeric packages
@@ -38,8 +41,10 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy and install production Python dependencies (smaller, avoids dev-only packages)
+# We copy the prod file and also write it to requirements.txt to be defensive
 COPY backend/requirements-prod.txt ./requirements-prod.txt
 RUN python -m pip install --upgrade pip setuptools wheel && \
+    cp requirements-prod.txt requirements.txt && \
     pip install --no-cache-dir -r requirements-prod.txt
 
 # Copy backend code to /app/backend

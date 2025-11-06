@@ -12,9 +12,13 @@ else
 fi
 npm run build
 
-echo "[start-prod] Building done. Installing backend requirements..."
+echo "[start-prod] Building done. Installing backend production requirements..."
 cd "$ROOT_DIR/backend"
-if [ -f requirements.txt ]; then
+if [ -f requirements-prod.txt ]; then
+  python -m pip install --upgrade pip setuptools wheel
+  pip install -r requirements-prod.txt
+elif [ -f requirements.txt ]; then
+  # Defensive fallback for older setups that still reference requirements.txt
   python -m pip install --upgrade pip setuptools wheel
   pip install -r requirements.txt
 fi
