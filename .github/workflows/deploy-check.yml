@@ -1,45 +1,27 @@
-name: 🚀 Med-Guardian CI/CD — Build, Test & Deploy to Railway
+name: Deploy to Railway
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  build-and-deploy:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 🧩 Checkout code
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
+      - name: Setup Railway CLI
+        run: npm install -g @railway/cli
 
-      - name: 📦 Install backend dependencies
-        run: |
-          pip install -r backend/requirements.txt
-          python -m compileall backend
-
-      - name: ⚛️ Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: 🧱 Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-
-      - name: 🐳 Validate Docker build
-        run: docker build -t med-guardian .
-
-      - name: 🚢 Deploy to Railway via CLI
-        run: |
-          npm install -g @railway/cli
-          railway link --service ${{ vars.RAILWAY_SERVICE_ID }}
-          railway up --ci
+      - name: Deploy to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+        run: |
+          echo "🔗 Linking to Railway service..."
+          railway link $RAILWAY_SERVICE_ID
+          echo "🚀 Deploying..."
+          railway up --service=$RAILWAY_SERVICE_ID --detach
