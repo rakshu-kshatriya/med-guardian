@@ -19,7 +19,8 @@ RUN npm run build
 FROM python:3.11-slim AS backend
 
 # A small cache-bust ARG so CI / Railway will perform a fresh build when we change the source
-ARG CACHEBUST=1
+# Bump this value to force a full rebuild and avoid stale cached layers on remote builders
+ARG CACHEBUST=2
 
 WORKDIR /app
 
