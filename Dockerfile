@@ -70,5 +70,5 @@ WORKDIR /app/backend
 
 # Run uvicorn (imports work because PYTHONPATH=/app allows importing backend.*)
 # But we're in /app/backend so relative imports work too
-CMD ["python", "-m", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["bash", "start-prod.sh"]
 
