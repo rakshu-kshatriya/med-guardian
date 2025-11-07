@@ -13,7 +13,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Railway CLI
+      - name: Install Railway CLI
         run: npm install -g @railway/cli
 
       - name: Deploy to Railway
@@ -22,8 +22,8 @@ jobs:
           RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
           RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
         run: |
-          echo "🔗 Linking to Railway service..."
-          railway link $RAILWAY_SERVICE_ID --environment $RAILWAY_ENVIRONMENT_ID
-          
-          echo "🚀 Deploying to Railway..."
-          railway up --service=$RAILWAY_SERVICE_ID --environment=$RAILWAY_ENVIRONMENT_ID --detach
+          echo "🔗 Linking to Railway environment..."
+          railway link --environment $RAILWAY_ENVIRONMENT_ID
+
+          echo "🚀 Deploying to Railway service..."
+          railway up --service=$RAILWAY_SERVICE_ID --detach
