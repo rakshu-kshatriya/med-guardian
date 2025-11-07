@@ -51,6 +51,10 @@ RUN python -m pip install --upgrade pip setuptools wheel && \
 # Copy backend code to /app/backend
 COPY backend/ ./backend/
 
+# Copy startup script so Railway or the Docker startCommand can run it.
+COPY start-prod.sh ./start-prod.sh
+RUN chmod +x ./start-prod.sh
+
 # Copy built frontend from previous stage
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 

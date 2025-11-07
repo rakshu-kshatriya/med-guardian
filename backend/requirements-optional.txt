@@ -1,0 +1,8 @@
+# Optional runtime dependencies that are not required by default.
+# Place libraries here that you may want to install into the production image
+# only when explicitly desired (for example: Sentry for error tracking).
+
+# Sentry SDK for Python (client-side and server-side error tracking).
+# To bake Sentry into the production image, add this package to requirements-prod.txt
+# or install it at container startup (the start script supports a runtime installer).
+sentry-sdk

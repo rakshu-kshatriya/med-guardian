@@ -31,6 +31,13 @@ from backend.news_ingest import fetch_combined_news, METRIC_NEWS_SAVED
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from backend.database import save_news_item
 
+# Read important runtime environment variables
+MONGO_URI = os.getenv("MONGO_URI")
+REDIS_URL = os.getenv("REDIS_URL")
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+
+# SENTRY initialization will be attempted after the FastAPI `app` and logger are created
+
 # Background ingestion / caching configuration
 NEWS_INGEST_INTERVAL = int(os.environ.get("NEWS_INGEST_INTERVAL", "300"))  # seconds
 NEWS_CACHE_TTL = int(os.environ.get("NEWS_CACHE_TTL", "180"))  # seconds
@@ -115,6 +122,23 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Med Guardian API", version="1.0.0")
+
+# Initialize Sentry (optional) for error tracking if SENTRY_DSN is provided
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+            _experiments={"profiles_sample_rate": float(os.getenv("SENTRY_PROFILES_SAMPLE_RATE", "0.0"))}
+        )
+        # Wrap the ASGI app so Sentry captures unhandled exceptions
+        app = SentryAsgiMiddleware(app)
+        logger.info("Sentry initialized")
+    except Exception as e:
+        logger.warning(f"Failed to initialize Sentry: {e}")
 
 # Get port from environment variable (Railway uses PORT, fallback to 8000)
 PORT = int(os.environ.get("PORT", os.environ.get("BACKEND_PORT", "8000")))
