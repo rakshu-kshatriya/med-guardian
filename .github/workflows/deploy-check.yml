@@ -20,8 +20,10 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
         run: |
           echo "🔗 Linking to Railway service..."
-          railway link $RAILWAY_SERVICE_ID
-          echo "🚀 Deploying..."
-          railway up --service=$RAILWAY_SERVICE_ID --detach
+          railway link $RAILWAY_SERVICE_ID --environment $RAILWAY_ENVIRONMENT_ID
+          
+          echo "🚀 Deploying to Railway..."
+          railway up --service=$RAILWAY_SERVICE_ID --environment=$RAILWAY_ENVIRONMENT_ID --detach
