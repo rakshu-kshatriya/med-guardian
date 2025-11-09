@@ -13,17 +13,24 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # ✅ Step 1: Install Railway CLI
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
-      - name: Deploy to Railway
+      # ✅ Step 2: Authenticate using your Railway Token from GitHub Secrets
+      - name: Login to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
-          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
-        run: |
-          echo "🔗 Linking to Railway environment..."
-          railway link --environment $RAILWAY_ENVIRONMENT_ID
+        run: railway login --token $RAILWAY_TOKEN
 
-          echo "🚀 Deploying to Railway service..."
-          railway up --service=$RAILWAY_SERVICE_ID --detach
+      # ✅ Step 3: Link repo to Railway environment
+      - name: Link Environment
+        env:
+          RAILWAY_ENVIRONMENT_ID: ${{ vars.RAILWAY_ENVIRONMENT_ID }}
+        run: railway link --environment $RAILWAY_ENVIRONMENT_ID
+
+      # ✅ Step 4: Deploy service
+      - name: Deploy to Railway
+        env:
+          RAILWAY_SERVICE_ID: ${{ vars.RAILWAY_SERVICE_ID }}
+        run: railway up --service=$RAILWAY_SERVICE_ID --detach
