@@ -42,4 +42,5 @@ ENV PYTHONUNBUFFERED=1
 
 # Start script
 
-CMD ["bash", "/app/start-prod.sh"]
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
+
