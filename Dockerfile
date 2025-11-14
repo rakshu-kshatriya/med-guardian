@@ -41,4 +41,5 @@ EXPOSE 8000
 ENV PYTHONUNBUFFERED=1
 
 # Start script
-CMD ["sh", "/app/start-prod.sh"]
+
+CMD ["bash", "/app/start-prod.sh"]
