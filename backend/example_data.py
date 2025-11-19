@@ -1,123 +1,121 @@
 """
 Synthetic data generator for disease trends.
-Generates plausible cases, temperature, and AQI data with seasonality and noise.
-Falls back to this when MongoDB is not available.
+Generates realistic temperature, AQI, and case counts.
+Used whenever MongoDB does not provide stored data.
+Safe for Railway deployment.
 """
 
 import pandas as pd
 import numpy as np
 from datetime import datetime, timedelta
-from backend.city_data import CITIES
-from backend.database import save_trend_data
+from typing import Optional, Dict, List
 
+from backend.city_data import CITIES
+from backend.database import save_trend_data, is_mongodb_available
+
+
+# ---------------------------------------------------------
+# CITY TEMPERATURE HEURISTIC
+# ---------------------------------------------------------
+def _estimate_base_temperature(lat: float) -> float:
+    """Estimate baseline temperature using simple latitude heuristics."""
+    if lat > 28:      # North India → cooler
+        return 22.0
+    elif lat < 12:    # South India → hotter
+        return 28.0
+    return 25.0       # Central regions
+
+
+# ---------------------------------------------------------
+# SYNTHETIC DATA GENERATOR
+# ---------------------------------------------------------
 def generate_synthetic_data(
     city: str,
     disease: str = "Unknown",
     days: int = 60,
-    start_date: datetime = None
+    start_date: Optional[datetime] = None
 ) -> pd.DataFrame:
-    """
-    Generate synthetic disease trend data for a city.
-    
-    Args:
-        city: City name
-        disease: Disease name
-        days: Number of days to generate
-        start_date: Start date (defaults to days ago from today)
-    
-    Returns:
-        DataFrame with columns: ds, y (cases), avg_temp, real_time_aqi
-    """
+    """Generate realistic synthetic disease trend data."""
+
     if start_date is None:
         start_date = datetime.now() - timedelta(days=days)
-    
-    # Get city data for base temperature (latitude affects climate)
+
+    # Lookup city
     city_data = next((c for c in CITIES if c["city_name"].lower() == city.lower()), None)
-    base_temp = 25.0  # Default
-    if city_data:
-        # Approximate temperature based on latitude (rough heuristic)
-        lat = city_data["lat"]
-        if lat > 28:  # North India
-            base_temp = 22.0
-        elif lat < 12:  # South India
-            base_temp = 28.0
-        else:
-            base_temp = 25.0
-    
+    lat = city_data["lat"] if city_data else 20.0
+    base_temp = _estimate_base_temperature(lat)
+
+    # Build date range
     dates = [start_date + timedelta(days=i) for i in range(days)]
-    
-    # Generate cases with seasonality and trend
+
+    # Case count generation
     t = np.arange(days)
-    # Base trend (slight upward)
-    trend = 50 + 0.5 * t
-    # Seasonal component (sinusoidal, peaks in monsoon/post-monsoon)
+    trend = 40 + 0.5 * t             # mild increasing trend
     day_of_year = np.array([d.timetuple().tm_yday for d in dates])
-    seasonality = 30 * np.sin(2 * np.pi * day_of_year / 365.25 - np.pi/2) + 20
-    # Random noise
+
+    # Seasonality: monsoon peak
+    seasonality = 25 * np.sin(2 * np.pi * day_of_year / 365.25 - 1.2) + 20
     noise = np.random.normal(0, 10, days)
-    cases = np.maximum(trend + seasonality + noise, 0).astype(int)
-    
-    # Generate temperature (realistic range for India)
-    temp_base = base_temp
+
+    cases = np.maximum(trend + seasonality + noise, 2).astype(int)
+
+    # Temperature profile
     temp_variation = 5 * np.sin(2 * np.pi * day_of_year / 365.25)
-    temp_noise = np.random.normal(0, 2, days)
-    avg_temp = np.clip(temp_base + temp_variation + temp_noise, 18.0, 38.0)
-    
-    # Generate AQI (Air Quality Index, 0-500 scale)
-    # Higher in winter months, lower in monsoon
-    aqi_base = 80
-    aqi_seasonal = -20 * np.sin(2 * np.pi * day_of_year / 365.25 + np.pi)
-    aqi_noise = np.random.normal(0, 15, days)
+    temp_noise = np.random.normal(0, 1.8, days)
+    avg_temp = np.clip(base_temp + temp_variation + temp_noise, 18, 38)
+
+    # AQI profile
+    aqi_base = 90
+    aqi_seasonal = -25 * np.sin(2 * np.pi * day_of_year / 365.25 + 2.5)
+    aqi_noise = np.random.normal(0, 12, days)
     real_time_aqi = np.clip(aqi_base + aqi_seasonal + aqi_noise, 30, 200)
-    
+
+    # Build DataFrame
     df = pd.DataFrame({
         "ds": dates,
         "y": cases,
         "avg_temp": avg_temp.round(2),
         "real_time_aqi": real_time_aqi.round(2)
     })
-    
-    # Save to MongoDB if available (save latest data point)
-    if len(dates) > 0:
-        try:
-            from backend.database import is_mongodb_available
-            if is_mongodb_available():
-                latest_idx = len(df) - 1
-                save_trend_data(
-                    city=city,
-                    disease=disease,
-                    date=dates[latest_idx],
-                    cases=int(cases[latest_idx]),
-                    avg_temp=float(avg_temp[latest_idx]),
-                    real_time_aqi=float(real_time_aqi[latest_idx])
-                )
-        except Exception as e:
-            # Silently fail - synthetic data generation should not depend on DB
-            pass
-    
+
+    # Save only the last row (optional)
+    try:
+        if is_mongodb_available():
+            idx = len(df) - 1
+            save_trend_data(
+                city=city,
+                disease=disease,
+                date=dates[idx],
+                cases=int(cases[idx]),
+                avg_temp=float(avg_temp[idx]),
+                real_time_aqi=float(real_time_aqi[idx])
+            )
+    except Exception:
+        # DB errors must not break synthetic data generation
+        pass
+
     return df
 
-def get_latest_trends(city: str, disease: str = "Unknown", days: int = 30) -> dict:
-    """
-    Get latest trend data for a city.
-    
-    Returns:
-        Dict with city, disease, and history array
-    """
+
+# ---------------------------------------------------------
+# PUBLIC API: GET LATEST TRENDS
+# ---------------------------------------------------------
+def get_latest_trends(city: str, disease: str = "Unknown", days: int = 30) -> Dict[str, any]:
+    """Return structured trend history for the given city."""
+
     df = generate_synthetic_data(city, disease, days)
-    
-    history = []
+
+    history: List[Dict[str, any]] = []
     for _, row in df.iterrows():
         history.append({
             "ds": row["ds"].strftime("%Y-%m-%d"),
             "y": int(row["y"]),
             "avg_temp": float(row["avg_temp"]),
-            "real_time_aqi": float(row["real_time_aqi"])
+            "real_time_aqi": float(row["real_time_aqi"]),
         })
-    
+
     return {
         "city": city,
         "disease": disease,
         "history": history
     }
-

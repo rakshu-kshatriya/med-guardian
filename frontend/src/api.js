@@ -2,184 +2,146 @@
  * API client for Med Guardian backend
  */
 
-import axios from 'axios';
+import axios from "axios";
 
-// Use environment variable if set, otherwise relative URL for production, absolute for development
-const API_BASE_URL = import.meta.env.VITE_API_URL 
-  ? `${import.meta.env.VITE_API_URL}/api`
-  : import.meta.env.DEV 
-    ? 'http://localhost:8000/api' 
-    : '/api';
+/**
+ * API base URL logic:
+ * - If VITE_API_URL is set (Railway), use it
+ * - If running locally (import.meta.env.DEV), use localhost
+ * - Otherwise use relative path (when FastAPI serves frontend)
+ */
+const RAW_BASE_URL = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL
+  : import.meta.env.DEV
+    ? "http://localhost:8000"
+    : "";
+
+// Append /api to all endpoints
+const API_BASE_URL = `${RAW_BASE_URL}/api`;
+
+console.log("📡 Using API base URL:", API_BASE_URL);
 
 const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
 /**
  * Get latest trends for a city
  */
-export const getLatestTrends = async (city, disease = 'Unknown') => {
-  try {
-    const response = await api.get('/trends/latest', {
-      params: { city, disease },
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching latest trends:', error);
-    throw error;
-  }
+export const getLatestTrends = async (city, disease = "Unknown") => {
+  const response = await api.get("/trends/latest", {
+    params: { city, disease },
+  });
+  return response.data;
 };
 
 /**
- * Get prediction forecast for a city
+ * Get prediction forecast
  */
-export const getPrediction = async (city, disease = 'Unknown') => {
-  try {
-    const response = await api.get('/predictor', {
-      params: { city, disease },
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching prediction:', error);
-    throw error;
-  }
+export const getPrediction = async (city, disease = "Unknown") => {
+  const response = await api.get("/predictor", {
+    params: { city, disease },
+  });
+  return response.data;
 };
 
 /**
  * Get health advisory
  */
 export const getAdvisory = async (city, disease, aqi, temp) => {
-  try {
-    const response = await api.get('/advisory_service', {
-      params: { city, disease, aqi, temp },
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching advisory:', error);
-    throw error;
-  }
+  const response = await api.get("/advisory_service", {
+    params: { city, disease, aqi, temp },
+  });
+  return response.data;
 };
 
 /**
- * Get directions between two cities
- */
-export const getDirections = async (originCity, destinationCity) => {
-  try {
-    const response = await api.get('/directions', {
-      params: {
-        origin_city: originCity,
-        destination_city: destinationCity,
-      },
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching directions:', error);
-    throw error;
-  }
-};
-
-/**
- * Get list of all cities
+ * Get list of cities
  */
 export const getCities = async () => {
-  try {
-    // Backend exposes city list at /api/city_data
-    const response = await api.get('/city_data');
-    return response.data.cities;
-  } catch (error) {
-    console.error('Error fetching cities:', error);
-    throw error;
-  }
+  const response = await api.get("/city_data");
+  return response.data.cities;
 };
 
 /**
- * Get latest news/social trends for a city and disease
+ * Get news/social trends
  */
-export const getNewsTrends = async (city, disease = 'Unknown', limit = 10) => {
-  try {
-    const response = await api.get('/news_trends', {
-      params: { city, disease, limit }
-    });
-    return response.data;
-  } catch (error) {
-    console.error('Error fetching news trends:', error);
-    throw error;
-  }
+export const getNewsTrends = async (
+  city,
+  disease = "Unknown",
+  limit = 10
+) => {
+  const response = await api.get("/news_trends", {
+    params: { city, disease, limit },
+  });
+  return response.data;
 };
 
 /**
- * Create EventSource for news SSE stream
+ * SSE: News stream
  */
-export const createNewsStreamConnection = (city, disease = 'Unknown', onNews, onError) => {
-  const streamUrl = `${API_BASE_URL}/stream_news?city=${encodeURIComponent(city)}&disease=${encodeURIComponent(disease)}`;
+export const createNewsStreamConnection = (
+  city,
+  disease = "Unknown",
+  onNews,
+  onError
+) => {
+  const streamUrl = `${API_BASE_URL}/stream_news?city=${encodeURIComponent(
+    city
+  )}&disease=${encodeURIComponent(disease)}`;
+
   const eventSource = new EventSource(streamUrl);
 
-  eventSource.addEventListener('news', (event) => {
+  eventSource.addEventListener("news", (event) => {
     try {
       const data = JSON.parse(event.data);
       onNews(data);
     } catch (err) {
-      console.error('Error parsing news stream data:', err);
+      console.error("Error parsing news stream:", err);
     }
   });
 
-  eventSource.addEventListener('error', (ev) => {
-    console.error('News stream error:', ev);
-    if (onError) onError(ev);
-  });
-
-  eventSource.onopen = () => console.log('News stream connected');
-  eventSource.onerror = (err) => { if (onError) onError(err); };
+  eventSource.onerror = (err) => {
+    console.error("❌ News stream error", err);
+    if (onError) onError(err);
+  };
 
   return eventSource;
 };
 
 /**
- * Create EventSource connection for SSE stream
- * @param {string} city - City name
- * @param {string} disease - Disease name
- * @param {Function} onUpdate - Callback for update events
- * @param {Function} onError - Callback for error events
- * @returns {EventSource} EventSource instance
+ * SSE: Prediction / trend stream
  */
-export const createStreamConnection = (city, disease = 'Unknown', onUpdate, onError) => {
-  const streamUrl = `${API_BASE_URL}/stream?city=${encodeURIComponent(city)}&disease=${encodeURIComponent(disease)}`;
-  
+export const createStreamConnection = (
+  city,
+  disease = "Unknown",
+  onUpdate,
+  onError
+) => {
+  const streamUrl = `${API_BASE_URL}/stream?city=${encodeURIComponent(
+    city
+  )}&disease=${encodeURIComponent(disease)}`;
+
   const eventSource = new EventSource(streamUrl);
-  
-  eventSource.addEventListener('update', (event) => {
+
+  eventSource.addEventListener("update", (event) => {
     try {
       const data = JSON.parse(event.data);
-      console.log('📊 Stream update received:', data);
       onUpdate(data);
     } catch (err) {
-      console.error('Error parsing stream data:', err);
+      console.error("Stream parse error:", err);
     }
   });
-  
-  eventSource.addEventListener('error', (event) => {
-    console.error('❌ Stream error:', event);
-    if (onError) {
-      onError(event);
-    }
-  });
-  
-  eventSource.onopen = () => {
-    console.log('✅ Stream connected:', { city, disease });
+
+  eventSource.onerror = (err) => {
+    console.error("❌ Stream error", err);
+    if (onError) onError(err);
   };
-  
-  eventSource.onerror = (error) => {
-    console.error('❌ Stream connection error:', error);
-    if (onError) {
-      onError(error);
-    }
-  };
-  
+
   return eventSource;
 };
 
 export default api;
-

@@ -1,6 +1,6 @@
 """
 Redis client module for caching and real-time features.
-Optional integration - works gracefully if Redis is not available.
+Railway-safe version. Works gracefully if Redis is not available.
 """
 
 import os
@@ -16,89 +16,87 @@ logger = logging.getLogger(__name__)
 _redis_client: Optional[redis.Redis] = None
 
 
+# ---------------------------------------------------------
+# CONNECT TO REDIS (SILENT IF NOT AVAILABLE)
+# ---------------------------------------------------------
 def get_redis_client() -> Optional[redis.Redis]:
-    """Get or create Redis client."""
+    """Return Redis client if REDIS_URL is set, else disable silently."""
     global _redis_client
-    
+
     if _redis_client is not None:
         return _redis_client
-    
+
     redis_url = os.environ.get("REDIS_URL")
 
-    # If no REDIS_URL provided, attempt a local Redis on default port as a convenience.
     if not redis_url:
-        default_local = "redis://localhost:6379/0"
-        try:
-            client = redis.from_url(default_local, decode_responses=True, socket_connect_timeout=2, socket_timeout=2)
-            client.ping()
-            _redis_client = client
-            logger.info("Connected to local Redis at redis://localhost:6379/0 (auto-detected)")
-            return _redis_client
-        except Exception:
-            logger.info("REDIS_URL not set and no local Redis detected, Redis disabled")
-            return None
-    
+        logger.info("REDIS_URL not set, Redis disabled.")
+        return None
+
     try:
         _redis_client = redis.from_url(
             redis_url,
             decode_responses=True,
             socket_connect_timeout=5,
-            socket_timeout=5
+            socket_timeout=5,
         )
-        # Test connection
         _redis_client.ping()
-        logger.info("✅ Connected to Redis")
+        logger.info("Connected to Redis.")
         return _redis_client
-    except (ConnectionError, TimeoutError) as e:
-        logger.warning(f"⚠️ Failed to connect to Redis: {e}")
-        _redis_client = None
-        return None
-    except Exception as e:
-        logger.warning(f"⚠️ Redis connection error: {e}")
+
+    except Exception:
+        logger.error("Redis connection failed.")
         _redis_client = None
         return None
 
 
+# ---------------------------------------------------------
+# CACHE GET
+# ---------------------------------------------------------
 def cache_get(key: str) -> Optional[Any]:
-    """Get value from Redis cache."""
+    """Retrieve a value from Redis cache."""
     client = get_redis_client()
     if client is None:
         return None
-    
+
     try:
         value = client.get(key)
-        if value:
-            return json.loads(value)
-        return None
-    except Exception as e:
-        logger.error(f"Error getting from Redis cache: {e}")
+        return json.loads(value) if value else None
+    except Exception:
         return None
 
 
+# ---------------------------------------------------------
+# CACHE SET
+# ---------------------------------------------------------
 def cache_set(key: str, value: Any, ttl: int = 3600):
-    """Set value in Redis cache with TTL (default 1 hour)."""
+    """Store JSON-encoded value in Redis with TTL."""
     client = get_redis_client()
     if client is None:
         return False
-    
+
     try:
         client.setex(key, ttl, json.dumps(value))
         return True
-    except Exception as e:
-        logger.error(f"Error setting Redis cache: {e}")
+    except Exception:
         return False
 
 
+# ---------------------------------------------------------
+# HEALTH CHECK
+# ---------------------------------------------------------
 def is_redis_available() -> bool:
-    """Check if Redis is available."""
     return get_redis_client() is not None
 
 
+# ---------------------------------------------------------
+# CLOSE CONNECTION
+# ---------------------------------------------------------
 def close_redis_connection():
-    """Close Redis connection."""
     global _redis_client
-    if _redis_client is not None:
-        _redis_client.close()
+    if _redis_client:
+        try:
+            _redis_client.close()
+        except Exception:
+            pass
         _redis_client = None
-        logger.info("Redis connection closed")
-
+        logger.info("Redis connection closed.")

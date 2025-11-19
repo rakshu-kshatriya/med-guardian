@@ -1,9 +1,12 @@
 """
 Indian cities data with coordinates and state information.
-Used for disease tracking, predictions, and route calculations.
+Used for disease tracking, predictions, and routing.
+Optimized version with fast lookup and type hints.
 """
 
-CITIES = [
+from typing import List, Dict, Optional
+
+CITIES: List[Dict] = [
     {"city_name": "New Delhi", "state": "Delhi", "lat": 28.6139, "lng": 77.2090},
     {"city_name": "Mumbai", "state": "Maharashtra", "lat": 19.0760, "lng": 72.8777},
     {"city_name": "Bengaluru", "state": "Karnataka", "lat": 12.9716, "lng": 77.5946},
@@ -36,14 +39,17 @@ CITIES = [
     {"city_name": "Bhubaneswar", "state": "Odisha", "lat": 20.2961, "lng": 85.8245},
 ]
 
-def get_city_by_name(city_name: str) -> dict:
-    """Get city data by name (case-insensitive)."""
-    for city in CITIES:
-        if city["city_name"].lower() == city_name.lower():
-            return city
-    return None
+# Build a fast lookup dictionary
+CITY_INDEX = {city["city_name"].lower(): city for city in CITIES}
 
-def get_all_cities() -> list:
-    """Get all cities."""
+
+def get_city_by_name(city_name: str) -> Optional[Dict]:
+    """Return city dict by case-insensitive name."""
+    if not city_name:
+        return None
+    return CITY_INDEX.get(city_name.lower())
+
+
+def get_all_cities() -> List[Dict]:
+    """Return all cities."""
     return CITIES
-
