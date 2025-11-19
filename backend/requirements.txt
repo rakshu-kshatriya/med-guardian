@@ -1,4 +1,34 @@
---requirement requirements-prod.txt
-# For development with the full stack, see requirements-dev.txt
-# To install dev deps locally:
-#   pip install -r requirements-dev.txt
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
+
+# Data & ML
+pandas
+numpy
+scikit-learn
+
+# Prophet (optional)
+prophet==1.1.5 ; platform_machine != "arm64"
+
+# Async HTTP client
+httpx
+
+# Mongo & Redis optional clients
+pymongo
+redis
+
+# SSE support
+aiofiles
+
+# Sentiment analysis fallback (optional)
+nltk
+
+# Monitoring metrics
+prometheus-client
+
+# For date parsing
+python-dateutil
+
+
+--requirement backend/requirements-prod.txt

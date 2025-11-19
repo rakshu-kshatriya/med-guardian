@@ -3,7 +3,7 @@ Disease prediction using Prophet with temperature & AQI regressors.
 Fully Railway-safe version:
  - Never crashes main API
  - Falls back cleanly if Prophet is missing or fails
- - Handles small or empty datasets
+ - Handles small or empty datasets gracefully
 """
 
 import pandas as pd
@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 def run_forecast(df: pd.DataFrame) -> pd.DataFrame:
     """
     Run Prophet forecast; fallback to regression; fallback to synthetic.
-    
+
     Args:
         df: DataFrame with columns -> ds, y, avg_temp, real_time_aqi
-    
+
     Returns:
         DataFrame (30 rows): ds, yhat, yhat_lower, yhat_upper
     """
@@ -42,7 +42,7 @@ def run_forecast(df: pd.DataFrame) -> pd.DataFrame:
     if len(df) < 10:
         return _synthetic_forecast()
 
-    # Try Prophet
+    # Try Prophet forecast
     try:
         from prophet import Prophet
 
@@ -59,13 +59,13 @@ def run_forecast(df: pd.DataFrame) -> pd.DataFrame:
         m.add_regressor("avg_temp", prior_scale=0.5)
         m.add_regressor("real_time_aqi", prior_scale=0.5)
 
-        # Fit Prophet
+        # Fit prophet model
         m.fit(df_reg)
 
         # Build future 30 days
         future = m.make_future_dataframe(periods=30, freq="D")
 
-        # Fill future regressors
+        # Fill missing regressors with rolling averages
         avg_temp_future = df_reg["avg_temp"].tail(7).mean()
         aqi_future = df_reg["real_time_aqi"].tail(7).mean()
 
@@ -75,18 +75,18 @@ def run_forecast(df: pd.DataFrame) -> pd.DataFrame:
 
         # Predict
         forecast = m.predict(future)
-
         result = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].copy()
 
-        # Non-negative predictions
+        # Non-negative enforcement
         for col in ["yhat", "yhat_lower", "yhat_upper"]:
             result[col] = np.maximum(result[col], 0)
 
-        # Return only next 30 days
+        # Only future 30 rows
         return result.tail(30).copy()
 
     except Exception as e:
         logger.warning(f"Prophet forecast failed: {e}. Using regression fallback.")
+
         try:
             return _fallback_forecast(df)
         except Exception as e2:
@@ -95,7 +95,7 @@ def run_forecast(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # ---------------------------------------------------------------------------
-# FALLBACK 1 — Simple Linear Regression With Seasonal Features
+# FALLBACK 1 — Linear Regression With Seasonal Features
 # ---------------------------------------------------------------------------
 def _fallback_forecast(df: pd.DataFrame) -> pd.DataFrame:
     """Fallback linear regression model."""
@@ -127,14 +127,14 @@ def _fallback_forecast(df: pd.DataFrame) -> pd.DataFrame:
     future["sin_season"] = np.sin(2 * np.pi * future["day_of_year"] / 365.25)
     future["cos_season"] = np.cos(2 * np.pi * future["day_of_year"] / 365.25)
 
-    # Use 7-day average for temp & aqi future values
+    # Use rolling averages
     future["avg_temp"] = df["avg_temp"].tail(7).mean()
     future["real_time_aqi"] = df["real_time_aqi"].tail(7).mean()
 
     X_future = future[["days", "avg_temp", "real_time_aqi", "sin_season", "cos_season"]].values
     yhat = model.predict(X_future)
 
-    # Confidence interval
+    # CI calculation
     resid = y - model.predict(X)
     std_err = np.std(resid)
 
@@ -160,15 +160,12 @@ def _synthetic_forecast() -> pd.DataFrame:
     base = datetime.utcnow()
     dates = [base + timedelta(days=i) for i in range(1, 31)]
 
-    # Simple synthetic pattern
     t = np.arange(30)
     yhat = 40 + 0.8 * t + 5 * np.sin(2 * np.pi * t / 30)
 
-    df = pd.DataFrame({
+    return pd.DataFrame({
         "ds": dates,
         "yhat": np.maximum(yhat, 0),
         "yhat_lower": np.maximum(yhat - 10, 0),
         "yhat_upper": np.maximum(yhat + 10, 0)
     })
-
-    return df

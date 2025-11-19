@@ -1,4 +1,4 @@
-name: CI — Build & (optional) Deploy to Railway
+name: CI — Build & Optional Railway Deploy
 
 on:
   push:
@@ -6,12 +6,16 @@ on:
 
 jobs:
   build:
-    name: Build frontend, backend and docker image
+    name: Build frontend, backend, and Docker image
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # -------------------------
+      # Frontend Build
+      # -------------------------
       - name: Use Node.js 18
         uses: actions/setup-node@v4
         with:
@@ -21,28 +25,34 @@ jobs:
         uses: actions/cache@v4
         with:
           path: frontend/node_modules
-          key: ${{ runner.OS }}-node-${{ hashFiles('frontend/package-lock.json', 'frontend/package.json') }}
+          key: ${{ runner.os }}-node-${{ hashFiles('frontend/package-lock.json') }}
           restore-keys: |
-            ${{ runner.OS }}-node-
+            ${{ runner.os }}-node-
 
-      - name: Install and build frontend
+      - name: Install & build frontend
         working-directory: frontend
         run: |
           npm ci
           npm run build
 
+      # -------------------------
+      # Backend Build
+      # -------------------------
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
 
-      - name: Install backend requirements
+      - name: Install backend dependencies
         working-directory: backend
         run: |
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements-prod.txt
 
-      - name: Build docker image (local, no push)
+      # -------------------------
+      # Docker Build (LOCAL ONLY)
+      # -------------------------
+      - name: Build Docker image
         uses: docker/build-push-action@v4
         with:
           context: .
@@ -51,28 +61,26 @@ jobs:
           tags: med-guardian:latest
 
   deploy:
-    name: Optional: Deploy to Railway (requires secrets)
+    name: Deploy to Railway (if secrets available)
     needs: build
     runs-on: ubuntu-latest
     if: ${{ secrets.RAILWAY_API_KEY && secrets.RAILWAY_PROJECT_ID }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Railway CLI
-        run: |
-          npm install -g @railway/cli
+        run: npm install -g @railway/cli
 
       - name: Login to Railway
         env:
           RAILWAY_API_KEY: ${{ secrets.RAILWAY_API_KEY }}
-        run: |
-          railway login --apiKey $RAILWAY_API_KEY
+        run: railway login --apiKey $RAILWAY_API_KEY
 
-      - name: Trigger Railway deploy
+      - name: Trigger Railway Deploy
         env:
           RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
         run: |
-          # The CLI command below will trigger a deployment for the given project.
-          # If your Railway setup uses GitHub integration, pushing to main already triggers deploy.
+          # Trigger remote redeploy
           railway up --yes --project $RAILWAY_PROJECT_ID || true

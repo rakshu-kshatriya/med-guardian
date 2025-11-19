@@ -1,16 +1,31 @@
-fastapi==0.115.12
-uvicorn==0.22.0
-httpx==0.28.1
-pandas==2.2.3
-numpy==1.26.4
-scikit-learn==1.3.2
-pymongo==4.15.1
-redis==5.2.0
-prometheus_client==0.22.1
-python-dotenv==1.1.0
-python-multipart==0.0.20
-pydantic==2.11.4
-orjson==3.10.18
+fastapi
+uvicorn[standard]
+pydantic
+python-dotenv
 
-# Optional: if you want Sentry baked into the production image, uncomment the line below
-# sentry-sdk
+# Core data & ML dependencies
+pandas
+numpy
+scikit-learn
+
+# Prophet (optional). Railway may skip on ARM builds, fallback works.
+prophet==1.1.5 ; platform_machine != "arm64"
+
+# Async HTTP client for news_ingest
+httpx
+
+# Optional DB integrations (safe without keys)
+pymongo
+redis
+
+# SSE / streaming support
+aiofiles
+
+# Optional NLTK sentiment, used safely if available
+nltk
+
+# Prometheus metrics
+prometheus-client
+
+# Date parsing
+python-dateutil

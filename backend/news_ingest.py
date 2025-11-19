@@ -1,12 +1,18 @@
 """
-News ingestion helpers.
+News ingestion helpers — Railway-safe.
 
-This updated version is fully Railway-safe and prevents repeated warnings
-like:
+This updated version completely prevents warnings such as:
     "Ingest failed… No external news providers configured"
 
-If no API keys are provided, this module now returns deterministic
-synthetic news items instead of raising ValueError.
+How?
+- If no API keys exist → returns synthetic news silently.
+- If external API fails → synthetic fallback.
+- Uses deterministic mock titles for reliability.
+- Fully compatible with Railway environments.
+
+Environment variables:
+ - NEWSAPI_KEY (optional)
+ - TWITTER_BEARER_TOKEN (optional)
 """
 
 import os
@@ -22,7 +28,7 @@ from prometheus_client import Counter
 NEWSAPI_KEY = os.getenv("NEWSAPI_KEY")
 TWITTER_BEARER = os.getenv("TWITTER_BEARER_TOKEN")
 
-# Provider state
+# Provider state for backoff
 _provider_state: Dict[str, Dict] = {}
 _FAIL_THRESHOLD = int(os.getenv("NEWS_PROVIDER_FAIL_THRESHOLD", "3"))
 _BACKOFF_BASE = int(os.getenv("NEWS_PROVIDER_BACKOFF_BASE", "60"))  # seconds
@@ -34,7 +40,7 @@ METRIC_NEWS_SYNTH = Counter("news_items_synthetic_total", "Synthetic news items 
 
 
 # ---------------------------------------------------------------------
-# Circuit breaker
+# Provider circuit breaker
 # ---------------------------------------------------------------------
 def _provider_ok(name: str) -> bool:
     s = _provider_state.get(name)
@@ -62,7 +68,6 @@ async def fetch_newsapi(query: str, limit: int = 10) -> List[Dict]:
         "sortBy": "publishedAt",
         "language": "en",
     }
-
     headers = {"Authorization": NEWSAPI_KEY}
 
     METRIC_FETCH_TOTAL.labels(provider="newsapi").inc()
@@ -72,6 +77,7 @@ async def fetch_newsapi(query: str, limit: int = 10) -> List[Dict]:
             r.raise_for_status()
             data = r.json()
 
+        # Successful fetch → reset fail counter
         s = _provider_state.setdefault("newsapi", {"fails": 0})
         s["fails"] = 0
         s.pop("backoff_until", None)
@@ -116,7 +122,6 @@ async def fetch_twitter(query: str, limit: int = 10) -> List[Dict]:
         "max_results": str(min(limit, 100)),
         "tweet.fields": "created_at,text,author_id",
     }
-
     headers = {"Authorization": f"Bearer {TWITTER_BEARER}"}
 
     METRIC_FETCH_TOTAL.labels(provider="twitter").inc()
@@ -157,21 +162,21 @@ async def fetch_twitter(query: str, limit: int = 10) -> List[Dict]:
 # ---------------------------------------------------------------------
 # Synthetic fallback provider (Railway-safe)
 # ---------------------------------------------------------------------
-def _synthetic_news(city: str, disease: str, limit: int = 10) -> List[Dict]:
+def _synthetic_news(city: str, disease: str, limit: int = 10) -> List[Dict]]:
     """Deterministic & safe fallback when no APIs are configured."""
     ts = datetime.utcnow().isoformat() + "Z"
 
-    base_titles = [
-        f"Increase in {disease} symptoms observed in {city}",
-        f"{city} health advisory issued regarding {disease}",
-        f"{disease} cases showing mild rise in {city}",
-        f"Experts warn about seasonal risk of {disease} in {city}",
-        f"Citizens urged to take precautions as {disease} spreads",
+    titles = [
+        f"Health officials monitor rise in {disease} cases in {city}",
+        f"{city} issues precautionary advisory for {disease}",
+        f"Seasonal shift increases {disease} risk in {city}",
+        f"Experts urge caution as {disease} trends increase",
+        f"Public encouraged to follow safety guidelines for {disease}",
     ]
 
-    items = []
-    for i, title in enumerate(base_titles[:limit]):
-        items.append({
+    out = []
+    for i, title in enumerate(titles[:limit]):
+        out.append({
             "id": f"synthetic-{city}-{disease}-{i}",
             "title": title,
             "source": "SyntheticNews",
@@ -181,15 +186,15 @@ def _synthetic_news(city: str, disease: str, limit: int = 10) -> List[Dict]:
             "sentiment": "concern"
         })
 
-    METRIC_NEWS_SYNTH.inc(len(items))
-    return items
+    METRIC_NEWS_SYNTH.inc(len(out))
+    return out
 
 
 # ---------------------------------------------------------------------
-# Public API – Called by backend ingestion loop
+# Public combined provider
 # ---------------------------------------------------------------------
-async def fetch_combined_news(city: str, disease: str, limit: int = 10) -> List[Dict]:
-    """Fetch from external providers if available; fallback to synthetic."""
+async def fetch_combined_news(city: str, disease: str, limit: int = 10) -> List[Dict]]:
+    """Attempt external APIs; otherwise synthetic. Never raises warnings."""
 
     tasks = []
     q = f"{disease} {city}"
@@ -199,28 +204,26 @@ async def fetch_combined_news(city: str, disease: str, limit: int = 10) -> List[
     if TWITTER_BEARER:
         tasks.append(fetch_twitter(q, limit=limit))
 
-    # If no providers → synthetic fallback (no warnings!)
+    # No external providers → fallback silently
     if not tasks:
         return _synthetic_news(city, disease, limit)
 
-    # Run providers concurrently
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    items: List[Dict] = []
+    items = []
     for r in results:
         if isinstance(r, Exception):
             continue
         items.extend(r)
 
     if not items:
-        # still fallback
         return _synthetic_news(city, disease, limit)
 
-    # Normalize timestamps + dedupe
+    # Normalize & dedupe
     seen = set()
     final = []
     for it in items:
-        key = (it.get("link") or it["title"].lower())
+        key = (it.get("link") or it["title"]).lower()
         if key in seen:
             continue
         seen.add(key)
@@ -235,6 +238,6 @@ async def fetch_combined_news(city: str, disease: str, limit: int = 10) -> List[
 
     return sorted(
         final,
-        key=lambda x: datetime.fromisoformat(x["timestamp"].replace('Z', '+00:00')),
-        reverse=True
+        key=lambda x: datetime.fromisoformat(x["timestamp"].replace("Z", "+00:00")),
+        reverse=True,
     )[:limit]
